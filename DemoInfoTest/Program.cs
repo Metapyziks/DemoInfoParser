@@ -17,8 +17,7 @@ namespace DemoInfoTest
         public long? Unknown5;
         public string Unknown6;
 
-        public byte? Unknown2;
-        public byte? Unknown3;
+        public long? Unknown2;
         public short? Unknown4;
 
         public byte? GameEnd;
@@ -43,6 +42,8 @@ namespace DemoInfoTest
         }
 
         public readonly TeamData[] Teams = new TeamData[2];
+
+        [JsonIgnore]
         public readonly PlayerData[] Players = new PlayerData[10];
     }
 
@@ -190,11 +191,7 @@ namespace DemoInfoTest
                         round.GameEnd = reader.ReadByte();
                         break;
                     case RoundDataType.Unknown78:
-                        var leading = round.Unknown2 = reader.ReadByte();
-                        if ((leading & 0x80) == 0x80)
-                        {
-                            round.Unknown3 = reader.ReadByte();
-                        }
+                        round.Unknown2 = ReadVarInt( reader );
                         break;
                     case RoundDataType.EnemyKills:
                         count = reader.ReadByte();
