@@ -11,33 +11,35 @@ namespace DemoInfoTest
 {
     class RoundData
     {
-        public byte Unknown0;
-        public byte Unknown1;
+        public byte? Unknown0;
+        public byte? Unknown1;
 
-        public long Unknown5;
+        public long? Unknown5;
         public string Unknown6;
 
-        public byte Unknown2;
-        public byte Unknown3;
-        public short Unknown4;
+        public byte? Unknown2;
+        public byte? Unknown3;
+        public short? Unknown4;
 
-        public byte GameEnd;
+        public byte? GameEnd;
+
+        public string DemoUrl;
 
         public struct TeamData
         {
-            public int Score;
+            public int? Score;
         }
 
         public struct PlayerData
         {
-            public long PlayerId;
-            public int Kills;
-            public int Assists;
-            public int Deaths;
-            public int Score;
-            public int EnemyKills;
-            public byte Unknown0;
-            public byte Unknown1;
+            public long? PlayerId;
+            public int? Kills;
+            public int? Assists;
+            public int? Deaths;
+            public int? Score;
+            public int? EnemyKills;
+            public byte? Unknown0;
+            public byte? Unknown1;
         }
 
         public readonly TeamData[] Teams = new TeamData[2];
@@ -48,6 +50,8 @@ namespace DemoInfoTest
     {
         PlayerId = 0x08,
         Unknown10 = 0x10,
+        DemoUrl = 0x1a,
+        NewRound = 0x2a,
         Kills = 0x28,
         Assists = 0x30,
         Deaths = 0x38,
@@ -76,6 +80,7 @@ namespace DemoInfoTest
                 info.Unknown0 = ByteArrayToString(reader.ReadBytes(17));
                 var firstRoundOffset = reader.ReadByte();
                 info.Unknown1 = ByteArrayToString(reader.ReadBytes(firstRoundOffset));
+                Debug.Assert( reader.ReadByte() == (byte) RoundDataType.NewRound );
 
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
@@ -106,11 +111,7 @@ namespace DemoInfoTest
 
         private void ReadRound(BinaryReader reader)
         {
-            Debug.Assert(reader.ReadByte() == 0x2a);
-
             var length = reader.ReadByte();
-            var end = reader.BaseStream.Position + length;
-
             var round = new RoundData();
             Rounds.Add(round);
 
@@ -125,14 +126,14 @@ namespace DemoInfoTest
                 case 0x12:
                     break;
                 default:
-                    throw new NotImplementedException(round.Unknown1.ToString("x2"));
+                    throw new NotImplementedException(round.Unknown1?.ToString("x2"));
             }
 
             var headerLength = reader.ReadByte();
 
             RoundDataType lastType = 0;
             int index = 0;
-            while (reader.BaseStream.Position < end)
+            while (reader.BaseStream.Position < reader.BaseStream.Length)
             {
                 var type = (RoundDataType)reader.ReadByte();
                 if (lastType != type)
@@ -144,11 +145,17 @@ namespace DemoInfoTest
                 byte unknown;
                 switch (type)
                 {
+                    case RoundDataType.NewRound:
+                        return;
                     case RoundDataType.PlayerId:
                         round.Players[index++].PlayerId = ReadVarInt(reader);
                         break;
                     case RoundDataType.Unknown10:
                         round.Unknown5 = ReadVarInt(reader);
+                        break;
+                    case RoundDataType.DemoUrl:
+                        var urlLength = ReadVarInt( reader );
+                        round.DemoUrl = Encoding.ASCII.GetString( reader.ReadBytes( (int) urlLength ) );
                         break;
                     case RoundDataType.Kills:
                         round.Players[index++].Kills = (int) ReadVarInt( reader );
@@ -201,13 +208,15 @@ namespace DemoInfoTest
     {
         static void Main(string[] args)
         {
+            var settings = new JsonSerializerSettings {NullValueHandling = NullValueHandling.Ignore};
+
             var dir = @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\csgo\replays";
             foreach (var demoInfoPath in Directory.GetFiles(dir, "*.info", SearchOption.TopDirectoryOnly))
             {
                 Console.WriteLine(demoInfoPath);
                 var info = DemoInfo.FromFile(demoInfoPath);
                 var outPath = $"{Path.GetFileNameWithoutExtension(demoInfoPath)}.txt";
-                File.WriteAllText(outPath, JsonConvert.SerializeObject(info, Formatting.Indented));
+                File.WriteAllText(outPath, JsonConvert.SerializeObject(info, Formatting.Indented, settings));
             }
         }
     }
