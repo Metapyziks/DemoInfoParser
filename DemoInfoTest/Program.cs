@@ -42,8 +42,6 @@ namespace DemoInfoTest
         }
 
         public readonly TeamData[] Teams = new TeamData[2];
-
-        [JsonIgnore]
         public readonly PlayerData[] Players = new PlayerData[10];
     }
 
