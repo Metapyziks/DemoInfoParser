@@ -80,7 +80,10 @@ namespace DemoInfoTest
                 info.Unknown0 = ByteArrayToString(reader.ReadBytes(17));
                 var firstRoundOffset = reader.ReadByte();
                 info.Unknown1 = ByteArrayToString(reader.ReadBytes(firstRoundOffset));
-                Debug.Assert( reader.ReadByte() == (byte) RoundDataType.NewRound );
+                if ( reader.ReadByte() != (byte) RoundDataType.NewRound )
+                {
+                    throw new FormatException();
+                }
 
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
@@ -214,9 +217,18 @@ namespace DemoInfoTest
             foreach (var demoInfoPath in Directory.GetFiles(dir, "*.info", SearchOption.TopDirectoryOnly))
             {
                 Console.WriteLine(demoInfoPath);
-                var info = DemoInfo.FromFile(demoInfoPath);
-                var outPath = $"{Path.GetFileNameWithoutExtension(demoInfoPath)}.txt";
-                File.WriteAllText(outPath, JsonConvert.SerializeObject(info, Formatting.Indented, settings));
+                try
+                {
+                    var info = DemoInfo.FromFile( demoInfoPath );
+                    var outPath = $"{Path.GetFileNameWithoutExtension( demoInfoPath )}.txt";
+                    File.WriteAllText( outPath, JsonConvert.SerializeObject( info, Formatting.Indented, settings ) );
+                }
+                catch ( Exception e )
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(e);
+                    Console.ResetColor();
+                }
             }
         }
     }
