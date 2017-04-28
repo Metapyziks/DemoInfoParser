@@ -221,7 +221,7 @@ namespace DemoInfoTest
         {
             var settings = new JsonSerializerSettings {NullValueHandling = NullValueHandling.Ignore};
 
-            var dir = @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\csgo\replays";
+            var dir = args.Length != 0 ? args[0] : @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\csgo\replays";
             foreach (var demoInfoPath in Directory.GetFiles(dir, "*.info", SearchOption.TopDirectoryOnly))
             {
                 Console.WriteLine(demoInfoPath);
