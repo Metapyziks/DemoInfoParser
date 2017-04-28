@@ -38,8 +38,8 @@ namespace DemoInfoTest
             public int? Deaths;
             public int? Score;
             public int? EnemyKills;
-            public byte? Unknown0;
-            public byte? Unknown1;
+            public int? Headshots;
+            public int? Mvps;
         }
 
         public readonly TeamData[] Teams = new TeamData[2];
@@ -59,9 +59,9 @@ namespace DemoInfoTest
         Winner = 0x58,
         TeamScore = 0x60,
         Unknown78 = 0x78,
-        Unknown80 = 0x80,
-        Unknown88 = 0x88,
-        UnknownA8 = 0xA8
+        EnemyKills = 0x80,
+        Headshots = 0x88,
+        Mvps = 0xA8
     }
 
     class DemoInfo
@@ -112,6 +112,17 @@ namespace DemoInfoTest
             return (long)val;
         }
 
+        private long ReadInt( BinaryReader reader, int bytes )
+        {
+            ulong val = 0;
+            for ( var i = 0; i < bytes; ++i )
+            {
+                val <<= 8;
+                val |= reader.ReadByte();
+            }
+            return (long) val;
+        }
+
         private void ReadRound(BinaryReader reader)
         {
             var length = reader.ReadByte();
@@ -145,7 +156,7 @@ namespace DemoInfoTest
                     index = 0;
                 }
 
-                byte unknown;
+                byte count;
                 switch (type)
                 {
                     case RoundDataType.NewRound:
@@ -185,20 +196,17 @@ namespace DemoInfoTest
                             round.Unknown3 = reader.ReadByte();
                         }
                         break;
-                    case RoundDataType.Unknown80:
-                        unknown = reader.ReadByte();
-                        Debug.Assert(unknown == 1);
-                        round.Players[index++].EnemyKills = (int)ReadVarInt(reader);
+                    case RoundDataType.EnemyKills:
+                        count = reader.ReadByte();
+                        round.Players[index++].EnemyKills = (int) ReadInt( reader, count );
                         break;
-                    case RoundDataType.Unknown88:
-                        unknown = reader.ReadByte();
-                        Debug.Assert(unknown == 1);
-                        round.Players[index++].Unknown0 = reader.ReadByte();
+                    case RoundDataType.Headshots:
+                        count = reader.ReadByte();
+                        round.Players[index++].Headshots = (int)ReadInt(reader, count);
                         break;
-                    case RoundDataType.UnknownA8:
-                        unknown = reader.ReadByte();
-                        Debug.Assert(unknown == 1);
-                        round.Players[index++].Unknown1 = reader.ReadByte();
+                    case RoundDataType.Mvps:
+                        count = reader.ReadByte();
+                        round.Players[index++].Mvps = (int)ReadInt(reader, count);
                         break;
                     default:
                         throw new NotImplementedException(((byte)type).ToString("x2"));
