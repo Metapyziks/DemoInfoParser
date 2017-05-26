@@ -166,23 +166,7 @@ namespace DemoInfoTest
             var info = new DemoInfo();
 
             using ( var reader = new BinaryReader( File.Open( path, FileMode.Open, FileAccess.Read, FileShare.Read ) ) )
-            {/*
-                info.Unknown0 = ByteArrayToString( reader.ReadBytes( 5 ) );
-                info.StartTime = ReadTimeStamp( reader );
-                info.Unknown1 = ByteArrayToString( reader.ReadBytes( 7 ) );
-                var firstRoundOffset = reader.ReadByte();
-                info.Unknown2 = ByteArrayToString( reader.ReadBytes( firstRoundOffset ) );
-                if ( reader.ReadByte() != (byte) RoundDataType.NewRound )
-                {
-                    throw new FormatException();
-                }
-
-                while ( reader.BaseStream.Position < reader.BaseStream.Length )
-                {
-                    info.ReadRound( reader );
-                }
-                */
-
+            {
                 if ( reader.ReadByte() != 0x08 ) throw new Exception();
                 info.Unknown0 = ByteArrayToString( reader.ReadBytes( 2 ) );
                 if ( reader.ReadByte() != 0x80 ) throw new Exception();
@@ -366,7 +350,7 @@ namespace DemoInfoTest
                 try
                 {
                     var info = DemoInfo.FromFile( demoInfoPath );
-                    Console.WriteLine( $"{info.Unknown0}, {info.Unknown1:x8}, {info.Unknown2:x16}" );
+                    Console.WriteLine( $"{info.Unknown0}, {info.Unknown1:x8}, {info.Unknown2:x16}, {info.Rounds.Last().Unknown5:x8}" );
                     var outPath = $"{Path.GetFileNameWithoutExtension( demoInfoPath )}.txt";
                     File.WriteAllText( outPath, JsonConvert.SerializeObject( info, Formatting.Indented, settings ) );
                 }
