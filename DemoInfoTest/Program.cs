@@ -147,6 +147,18 @@ namespace DemoInfoTest
         Mvps = 0xA8
     }
 
+    enum Map : long
+    {
+        DeDust2     = 8 | (1 << 9),
+        DeInferno   = 8 | (1 << 12),
+        DeNuke      = 8 | (1 << 13),
+        DeMirage    = 8 | (1 << 15),
+        DeCache     = 8 | (1 << 20),
+        CsInsertion = 8 | (1 << 24),
+        DeOverpass  = 8 | (1 << 28),
+        DeCanals    = 8 | (1 << 30)
+    }
+
     class DemoInfo
     {
         private static string ByteArrayToString( byte[] arr )
@@ -188,7 +200,7 @@ namespace DemoInfoTest
         public DateTime StartTime2;
         public long ServerId;
         public long Unknown0;
-        public long Unknown1;
+        public Map Map;
         public long MatchId;
         public long Hash; // Maybe?
         public DateTime EndTime;
@@ -265,7 +277,7 @@ namespace DemoInfoTest
                         break;
                     case DataType.Unknown10:
                         // Always 2 bits set?
-                        Unknown1 = ReadVarInt( reader );
+                        Map = (Map) ReadVarInt( reader );
                         break;
                     case DataType.RoundHeaderLength:
                         var headerLength = ReadVarInt( reader );
@@ -342,7 +354,7 @@ namespace DemoInfoTest
                 try
                 {
                     var info = DemoInfo.FromFile( demoInfoPath );
-                    Console.WriteLine( $"{name}: {info.Unknown0}, {info.Hash:x16}, {ToBin(info.Unknown1, 32)}" );
+                    Console.WriteLine( $"{name}: {info.Unknown0}, {info.Hash:x16}, {info.Map}" );
                     var outPath = $"{Path.GetFileNameWithoutExtension( demoInfoPath )}.txt";
                     File.WriteAllText( outPath, JsonConvert.SerializeObject( info, Formatting.Indented, settings ) );
                 }
