@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -14,16 +15,7 @@ namespace DemoInfoTest
 {
     class RoundData
     {
-        public string Unknown0;
-        public byte? Unknown1;
-
-        public long? Unknown5;
-
         public TimeSpan? GameTime;
-
-        public bool? WasTie;
-
-        public string DemoUrl;
 
         public struct TeamData
         {
@@ -136,19 +128,20 @@ namespace DemoInfoTest
         }
     }
 
-    enum RoundDataType : byte
+    enum DataType : byte
     {
-        PlayerId = 0x08,
+        SteamIdOrTimestamp = 0x08,
         Unknown10 = 0x10,
+        RoundHeaderLength = 0x12,
         DemoUrl = 0x1a,
-        NewRound = 0x2a,
+        RoundDataLength = 0x2a,
         Kills = 0x28,
         Assists = 0x30,
         Deaths = 0x38,
         Score = 0x40,
         Winner = 0x58,
         TeamScore = 0x60,
-        Unknown78 = 0x78,
+        GameTime = 0x78,
         EnemyKills = 0x80,
         Headshots = 0x88,
         Mvps = 0xA8
@@ -167,28 +160,20 @@ namespace DemoInfoTest
 
             using ( var reader = new BinaryReader( File.Open( path, FileMode.Open, FileAccess.Read, FileShare.Read ) ) )
             {
-                if ( reader.ReadByte() != 0x08 ) throw new Exception();
-                info.Unknown0 = ByteArrayToString( reader.ReadBytes( 2 ) );
-                if ( reader.ReadByte() != 0x80 ) throw new Exception();
-                if ( reader.ReadByte() != 0x80 ) throw new Exception();
+                if ( reader.ReadByte() != (byte) DataType.SteamIdOrTimestamp ) throw new Exception();
                 info.StartTime = ReadTimeStamp( reader );
                 if ( reader.ReadByte() != 0x10 ) throw new Exception();
                 info.StartTime2 = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc ).AddSeconds( ReadVarInt( reader ) );
                 if ( reader.ReadByte() != 0x1a ) throw new Exception();
                 var firstRoundOffset = reader.ReadByte();
                 if ( reader.ReadByte() != 0x08 ) throw new Exception();
-                info.Unknown0 += " | " + ByteArrayToString( reader.ReadBytes( 1 ) );
-                if ( reader.ReadByte() != 0x01 ) throw new Exception();
+                info.ServerId = ReadVarInt( reader );
                 if ( reader.ReadByte() != 0x10 ) throw new Exception();
-                info.Unknown1 = ReadVarInt( reader );
+                info.MatchId = ReadVarInt( reader );
                 if ( reader.ReadByte() != 0x18 ) throw new Exception();
-                info.Unknown0 += " | " + ByteArrayToString( reader.ReadBytes( 1 ) );
+                info.Unknown0 = ReadVarInt( reader );
                 if ( reader.ReadByte() != 0x38 ) throw new Exception();
-                info.Unknown2 = ReadVarInt( reader );
-                if ( reader.ReadByte() != (byte) RoundDataType.NewRound )
-                {
-                    throw new FormatException();
-                }
+                info.Hash = ReadVarInt( reader );
 
                 while ( reader.BaseStream.Position < reader.BaseStream.Length )
                 {
@@ -201,10 +186,14 @@ namespace DemoInfoTest
 
         public DateTime StartTime;
         public DateTime StartTime2;
-        public string Unknown0;
+        public long ServerId;
+        public long Unknown0;
         public long Unknown1;
-        public long Unknown2;
+        public long MatchId;
+        public long Hash; // Maybe?
         public DateTime EndTime;
+        public string DemoUrl;
+        public bool WasTie;
         public readonly List<RoundData> Rounds = new List<RoundData>();
 
         private static long ReadVarInt( BinaryReader reader )
@@ -235,44 +224,23 @@ namespace DemoInfoTest
 
         private static DateTime ReadTimeStamp( BinaryReader reader )
         {
-            return new DateTime( 1970, 1, 1, 0, 0, 0, DateTimeKind.Utc ).AddSeconds( ReadVarInt( reader ) / 8d );
+            return new DateTime( 1970, 1, 1, 0, 0, 0, DateTimeKind.Utc ).AddSeconds( ReadVarInt( reader ) / (double) ((ulong) 1 << 31) );
         }
 
         private void ReadRound( BinaryReader reader )
         {
-            var length = reader.ReadByte();
             var round = new RoundData();
             Rounds.Add( round );
 
-            var always1 = reader.ReadByte();
-            if ( always1 != 1 )
-            {
-                throw new Exception( "Expected to read 0x01" );
-            }
-
-            // Always 8 or 18?
-            var gameState = reader.ReadByte();
-
-            switch ( gameState )
-            {
-                case 0x08:
-                    round.Unknown0 = ByteArrayToString( reader.ReadBytes( 4 ) );
-                    EndTime = ReadTimeStamp( reader );
-                    round.Unknown1 = reader.ReadByte();
-                    break;
-                case 0x12:
-                    break;
-                default:
-                    throw new NotImplementedException( gameState.ToString( "x2" ) );
-            }
-
-            var headerLength = reader.ReadByte();
-
-            RoundDataType lastType = 0;
+            DataType lastType = 0;
             int index = 0;
-            while ( reader.BaseStream.Position < reader.BaseStream.Length )
+
+            long dataEnd = reader.BaseStream.Length;
+            long headerEnd = 0;
+
+            while ( reader.BaseStream.Position < dataEnd )
             {
-                var type = (RoundDataType) reader.ReadByte();
+                var type = (DataType) reader.ReadByte();
                 if ( lastType != type )
                 {
                     lastType = type;
@@ -282,49 +250,61 @@ namespace DemoInfoTest
                 byte count;
                 switch ( type )
                 {
-                    case RoundDataType.NewRound:
-                        return;
-                    case RoundDataType.PlayerId:
+                    case DataType.RoundDataLength:
+                        var dataLength = ReadVarInt( reader );
+                        dataEnd = reader.BaseStream.Position + dataLength;
+                        break;
+                    case DataType.SteamIdOrTimestamp:
+                        // Not sure about this
+                        if ( headerEnd == 0 )
+                        {
+                            EndTime = ReadTimeStamp( reader );
+                            break;
+                        }
                         round.Players[index++].Player = new SteamId( (uint) ReadVarInt( reader ), 1, 1, 1 );
                         break;
-                    case RoundDataType.Unknown10:
+                    case DataType.Unknown10:
                         // Always 2 bits set?
-                        round.Unknown5 = ReadVarInt( reader );
+                        Unknown1 = ReadVarInt( reader );
                         break;
-                    case RoundDataType.DemoUrl:
+                    case DataType.RoundHeaderLength:
+                        var headerLength = ReadVarInt( reader );
+                        headerEnd = reader.BaseStream.Position + headerLength;
+                        break;
+                    case DataType.DemoUrl:
                         var urlLength = ReadVarInt( reader );
-                        round.DemoUrl = Encoding.ASCII.GetString( reader.ReadBytes( (int) urlLength ) );
+                        DemoUrl = Encoding.ASCII.GetString( reader.ReadBytes( (int) urlLength ) );
                         break;
-                    case RoundDataType.Kills:
+                    case DataType.Kills:
                         round.Players[index++].Kills = (int) ReadVarInt( reader );
                         break;
-                    case RoundDataType.Assists:
+                    case DataType.Assists:
                         round.Players[index++].Assists = (int) ReadVarInt( reader );
                         break;
-                    case RoundDataType.Deaths:
+                    case DataType.Deaths:
                         round.Players[index++].Deaths = (int) ReadVarInt( reader );
                         break;
-                    case RoundDataType.Score:
+                    case DataType.Score:
                         round.Players[index++].Score = (int) ReadVarInt( reader );
                         break;
-                    case RoundDataType.TeamScore:
+                    case DataType.TeamScore:
                         round.Teams[index++].Score = (int) ReadVarInt( reader );
                         break;
-                    case RoundDataType.Winner:
-                        round.WasTie = reader.ReadByte() == 0;
+                    case DataType.Winner:
+                        WasTie = reader.ReadByte() == 0;
                         break;
-                    case RoundDataType.Unknown78:
+                    case DataType.GameTime:
                         round.GameTime = TimeSpan.FromSeconds( ReadVarInt( reader ) );
                         break;
-                    case RoundDataType.EnemyKills:
+                    case DataType.EnemyKills:
                         count = reader.ReadByte();
                         round.Players[index++].EnemyKills = (int) ReadInt( reader, count );
                         break;
-                    case RoundDataType.Headshots:
+                    case DataType.Headshots:
                         count = reader.ReadByte();
                         round.Players[index++].Headshots = (int) ReadInt( reader, count );
                         break;
-                    case RoundDataType.Mvps:
+                    case DataType.Mvps:
                         count = reader.ReadByte();
                         round.Players[index++].Mvps = (int) ReadInt( reader, count );
                         break;
@@ -337,6 +317,16 @@ namespace DemoInfoTest
 
     class Program
     {
+        static string ToBin( long value, int bits )
+        {
+            var str = "";
+            for (var i = bits - 1; i >= 0; --i)
+            {
+                str += (value >> i) & 1;
+            }
+            return str;
+        }
+
         static void Main( string[] args )
         {
             var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
@@ -347,10 +337,12 @@ namespace DemoInfoTest
             var dir = args.Length != 0 ? args[0] : defaultDir;
             foreach ( var demoInfoPath in Directory.GetFiles( dir, "*.info", SearchOption.TopDirectoryOnly ) )
             {
+                var name = Path.GetFileNameWithoutExtension( demoInfoPath );
+
                 try
                 {
                     var info = DemoInfo.FromFile( demoInfoPath );
-                    Console.WriteLine( $"{info.Unknown0}, {info.Unknown1:x8}, {info.Unknown2:x16}, {info.Rounds.Last().Unknown5:x8}" );
+                    Console.WriteLine( $"{name}: {info.Unknown0}, {info.Hash:x16}, {ToBin(info.Unknown1, 32)}" );
                     var outPath = $"{Path.GetFileNameWithoutExtension( demoInfoPath )}.txt";
                     File.WriteAllText( outPath, JsonConvert.SerializeObject( info, Formatting.Indented, settings ) );
                 }
