@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -14,7 +15,7 @@ namespace DemoInfoTest
         private static readonly DateTime Epoch = new DateTime( 1970, 1, 1, 0, 0, 0, DateTimeKind.Utc );
 
         [ProtoMember( 1 ), JsonIgnore]
-        private ulong StartTimeSeconds64 { get; set; }
+        public ulong StartTimeSeconds64 { get; set; }
 
         [ProtoMember( 2 ), JsonIgnore]
         private uint StartTimeSeconds { get; set; }
@@ -37,14 +38,20 @@ namespace DemoInfoTest
         public MatchMessage Match { get; set; } = new MatchMessage();
 
         [ProtoMember( 4 ), JsonIgnore]
-        public RoundMessage LastRound
+        private RoundMessage LastRound
         {
-            get { return Rounds.LastOrDefault(); }
-            set { Rounds.Add( value ); }
+            get { return Rounds.Count == 1 ? Rounds[0] : null; }
+            set { Rounds.Clear(); Rounds.Add( value ); }
         }
 
-        [ProtoMember( 5 )]
-        public List<RoundMessage> Rounds { get; set; } = new List<RoundMessage>();
+        [ProtoMember( 5 ), JsonIgnore]
+        private List<RoundMessage> AllRounds
+        {
+            get { return Rounds.Count != 1 ? Rounds : null; }
+            set { Rounds.Clear(); Rounds.AddRange( value ); }
+        }
+        
+        public List<RoundMessage> Rounds { get; } = new List<RoundMessage>();
     }
 
     [ProtoContract]
@@ -56,7 +63,7 @@ namespace DemoInfoTest
         [ProtoMember( 2 )]
         public uint Id { get; set; }
 
-        [ProtoMember( 3 )]
+        [ProtoMember( 3, IsRequired = true )]
         public int Unknown { get; set; }
 
         [ProtoMember( 7 )]
@@ -106,8 +113,17 @@ namespace DemoInfoTest
     [ProtoContract]
     public class RoundHeaderMessage
     {
-        [ProtoMember( 1 )]
+        static string SteamIdToString( uint id )
+        {
+            const int universe = 0;
+            return $"STEAM_{universe}:{id & 1}:{id >> 1}";
+        }
+
+        [ProtoMember( 1 ), JsonIgnore]
         public List<uint> SteamIds { get; set; } = new List<uint>();
+
+        [JsonProperty("SteamIds")]
+        public IEnumerable<string> SteamIdStrings => SteamIds.Select( SteamIdToString );
 
         [ProtoMember( 2 )]
         public Map? Map { get; set; }
@@ -115,6 +131,7 @@ namespace DemoInfoTest
 
     public enum Map : long
     {
+        DeDust      = 8 | (1 << 8),
         DeDust2     = 8 | (1 << 9),
         DeTrain     = 8 | (1 << 10),
         DeAztec     = 8 | (1 << 11),
@@ -123,25 +140,33 @@ namespace DemoInfoTest
         DeVertigo   = 8 | (1 << 14),
         DeMirage    = 8 | (1 << 15),
         CsOffice    = 8 | (1 << 16),
+        CsItaly     = 8 | (1 << 17),
         CsAssault   = 8 | (1 << 18),
+        CsMilitia   = 8 | (1 << 19),
         DeCache     = 8 | (1 << 20),
         DeSeason    = 8 | (1 << 21),
         DeLog       = 8 | (1 << 22),
+        DeLite      = 8 | (1 << 23),
         CsInsertion = 8 | (1 << 24),
         DeZoo       = 8 | (1 << 25),
         DeSantorini = 8 | (1 << 26),
+        CsAgency    = 8 | (1 << 27),
         DeOverpass  = 8 | (1 << 28),
         DeCbble     = 8 | (1 << 29),
-        DeCanals    = 8 | (1 << 30)
+        DeCanals    = 8 | (1 << 30),
     }
 
     class Program
     {
+        static bool AreEqual( byte[] a, byte[] b )
+        {
+            return a.Length == b.Length && a.Select( (x, i) => x == b[i] ).All( x => x );
+        }
+
         static void Main( string[] args )
         {
             var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
 
-            //const string defaultDir = @"C:\Users\James\Documents\GitHub\DemoInfoParser\Examples";
             //const string defaultDir = @"C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\csgo\replays";
             var defaultDir = Path.GetDirectoryName( Assembly.GetExecutingAssembly().Location );
 
@@ -152,14 +177,28 @@ namespace DemoInfoTest
 
                 try
                 {
+                    DemoInfoMessage info;
                     using ( var stream = File.Open( demoInfoPath, FileMode.Open, FileAccess.Read, FileShare.Read ) )
                     {
-                        var info = Serializer.Deserialize<DemoInfoMessage>( stream );
-                        Console.WriteLine( $"{name}: {info.Match.Unknown}, {info.Match.Hash:x16}" );
-
-                        var outPath = $"{Path.GetFileNameWithoutExtension( demoInfoPath )}.txt";
-                        File.WriteAllText( outPath, JsonConvert.SerializeObject( info, Formatting.Indented, settings ) );
+                        info = Serializer.Deserialize<DemoInfoMessage>( stream );
                     }
+
+                    Console.WriteLine( $"{name}: {info.Match.Unknown:x2}, {info.Match.Hash:x16}" );
+
+                    var outPath = $"{Path.GetFileNameWithoutExtension( demoInfoPath )}.txt";
+                    File.WriteAllText( outPath, JsonConvert.SerializeObject( info, Formatting.Indented, settings ) );
+
+#if DEBUG
+                    using ( var outStream = new MemoryStream() )
+                    {
+                        Serializer.Serialize( outStream, info );
+
+                        var src = File.ReadAllBytes( demoInfoPath );
+                        var dst = outStream.ToArray();
+
+                        //Debug.Assert( AreEqual( src, dst ) );
+                    }
+#endif
                 }
                 catch ( Exception e )
                 {
